@@ -29,7 +29,9 @@ describe.skipIf(!corre)("API contra PostgreSQL (dev)", () => {
 
   it("health responde con la base", async () => {
     const r = await app.fetch(new Request("http://local/health"));
-    expect(await r.json()).toEqual({ ok: true, db: true });
+    const j = await r.json();
+    expect(j.ok).toBe(true);
+    expect(j.db).toBe(true);
   });
 
   it("correo sin afiliación: aviso de invitación", async () => {

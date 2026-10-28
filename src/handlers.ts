@@ -3,7 +3,7 @@
 // salvo que la sesión es propia (luka_cash_sessions) en lugar de Supabase Auth: code-verify devuelve session_token.
 import { jsonResponse } from "./cors";
 import { sql } from "./db";
-import { APP_PUBLIC_URL, DOMINIOS_PRODUCCION, LUKA_AUTH_URL, PAYCO_API_BASE, SESSION_DAYS, TERMINOS_VERSION, VERA_API_URL } from "./config";
+import { AMBIENTE, APP_PUBLIC_URL, DOMINIOS_PRODUCCION, LUKA_AUTH_URL, PAYCO_API_BASE, SESSION_DAYS, TERMINOS_VERSION, VERA_API_URL } from "./config";
 import { enviarCodigo, mailConfigurado } from "./mail";
 import { borrarObjeto, infoObjeto, urlSubida } from "./storage";
 import { estadoCuota } from "./lib/installments";
@@ -682,7 +682,7 @@ async function vera(r: Request) {
 async function health(r: Request) {
   try {
     await sql()`select 1`;
-    return jsonResponse(r, { ok: true, db: true });
+    return jsonResponse(r, { ok: true, db: true, ambiente: AMBIENTE, correo: mailConfigurado() });
   } catch {
     return jsonResponse(r, { ok: false, db: false }, 503);
   }

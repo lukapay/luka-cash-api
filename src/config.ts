@@ -3,6 +3,8 @@
 const env = (k: string, d?: string) => process.env[k] ?? d;
 
 export const IS_PROD = env("NODE_ENV") === "production";
+/** "calidad" (base luka-cash-dev, sin datos reales) o "produccion". En calidad se aceptan las vistas previas de Lovable. */
+export const AMBIENTE = env("AMBIENTE", IS_PROD ? "produccion" : "calidad") as string;
 export const PORT = Number(env("PORT", "3001"));
 
 /** Dominio público de la app (enlaces de activación, logo del correo). */
@@ -23,8 +25,8 @@ export const ALLOWED_ORIGINS: readonly string[] = [
   "https://id-preview--13ee17a3-1c40-4050-860c-36283a947427.lovable.app",
 ];
 
-/** Patrones extra solo fuera de producción: vistas previas de Lovable y desarrollo local. */
-export const ALLOWED_ORIGIN_PATTERNS: readonly RegExp[] = IS_PROD
+/** Patrones extra solo fuera de producción (AMBIENTE=calidad): vistas previas de Lovable y desarrollo local. */
+export const ALLOWED_ORIGIN_PATTERNS: readonly RegExp[] = AMBIENTE === "produccion"
   ? []
   : [
       /^https:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.lovable\.app$/,
