@@ -141,6 +141,9 @@ async function handoffCreate(r: Request) {
   const proveedor = str(b.proveedor, 80), id_cliente = str(b.id_cliente, 120);
   const rif = str(b.rif, 20).toUpperCase(), razon_social = str(b.razon_social, 200);
   const email = normalizeEmail(b.email), acepta_nombre = str(b.acepta_nombre, 120) || null;
+  const proveedor_nombre = str(b.proveedor_nombre, 120) || null;
+  const logo = str(b.proveedor_logo_url, 500);
+  const proveedor_logo_url = /^https:\/\//.test(logo) ? logo : null;
   if (!proveedor || !id_cliente || !rif || !razon_social || !EMAIL_RE.test(email)) return bad(r, "datos_invalidos", "Faltan datos o el correo no es válido.");
   const v = await verifyPortal(r, email);
   if (v instanceof Response) return v;
@@ -152,9 +155,11 @@ async function handoffCreate(r: Request) {
     if (existing.estado !== "activa") {
       await sql()`update luka_cash.luka_cash_affiliations set rif = ${rif}, razon_social = ${razon_social}, email = ${email}, acepta_nombre = ${acepta_nombre} where id = ${existing.id}`;
     }
+    await sql()`update luka_cash.luka_cash_affiliations set proveedor_nombre = coalesce(${proveedor_nombre}, proveedor_nombre),
+      proveedor_logo_url = coalesce(${proveedor_logo_url}, proveedor_logo_url) where id = ${existing.id}`;
   } else {
-    const [ins] = await sql()`insert into luka_cash.luka_cash_affiliations (proveedor, id_cliente, rif, razon_social, email, acepta_nombre, estado)
-      values (${proveedor}, ${id_cliente}, ${rif}, ${razon_social}, ${email}, ${acepta_nombre}, 'precalificado') returning id`;
+    const [ins] = await sql()`insert into luka_cash.luka_cash_affiliations (proveedor, id_cliente, rif, razon_social, email, acepta_nombre, estado, proveedor_nombre, proveedor_logo_url)
+      values (${proveedor}, ${id_cliente}, ${rif}, ${razon_social}, ${email}, ${acepta_nombre}, 'precalificado', ${proveedor_nombre}, ${proveedor_logo_url}) returning id`;
     affiliationId = ins!.id;
   }
   const h = opaqueToken();
