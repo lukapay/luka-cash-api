@@ -76,6 +76,16 @@ describe.skipIf(!corre)("API contra PostgreSQL (dev)", () => {
     expect(j.facturas).toEqual([]);
   });
 
+  it("facturas sincronizadas del proveedor se ven en la app", async () => {
+    await sql()`insert into luka_cash.luka_cash_invoices (affiliation_id, id_link, numero, monto, moneda, estado, vence)
+      values (${affId}, 'LINK-PRUEBA-1', '324228', 687.45, 'VES', 'pendiente', '2026-11-19')`;
+    const r = await post("invoices", {}, token);
+    const j = await r.json();
+    expect(r.status).toBe(200);
+    expect(j.facturas).toHaveLength(1);
+    expect(j.facturas[0]).toMatchObject({ numero: "324228", monto: 687.45, estado: "pendiente", vence: "2026-11-19" });
+  });
+
   it("sin sesión o con sesión cerrada: 401", async () => {
     expect((await post("balance", {})).status).toBe(401);
     expect((await post("session-close", {}, token)).status).toBe(200);

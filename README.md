@@ -18,7 +18,9 @@ mismas reglas y respuestas, sin Supabase.
 ## Rutas (`POST /api/public/luka/<nombre>`)
 `health` (también `GET /health`), `code-send`, `code-verify` (devuelve `session_token`), `session-close`, `balance`,
 `handoff-create`, `handoff-redeem`, `installments-pay`, `installments-confirm`, `documents-upload`, `documents-confirm`,
-`portal-affiliate`, `portal-plan-create`, `portal-balance`, `portal-installments-paid`, `vera`.
+`portal-affiliate`, `portal-plan-create`, `portal-balance`, `portal-installments-paid`, `portal-invoices-sync`, `invoices`, `vera`.
+
+**Facturas del proveedor (28-oct):** la API no tiene credenciales de Payco por comercio. El portal, con la sesión del comercio, envía la foto de sus facturas a `portal-invoices-sync` (`X-Portal-Token`; body `{ proveedor, id_cliente, email, facturas: [{ id_link, numero, orden?, monto, moneda, estado, vence?, url_adjunto? }] }`, reemplaza la foto anterior). La app las lee con `invoices` (sesión). `portal-affiliate` registra también al usuario (correo) como Owner de la empresa.
 
 **Cambios de contrato frente a la app de Lovable** (la app debe adaptarse):
 1. `code-verify` devuelve `{ session_token, expira_at }` en lugar de `{ token_hash }`. El cliente guarda el token y lo manda como `Authorization: Bearer`.

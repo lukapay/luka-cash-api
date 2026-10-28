@@ -540,6 +540,10 @@ async function portalAffiliate(r: Request) {
   }
   if (!af) return bad(r, "error", "No pudimos guardar la afiliación.", 500);
   await crearRequisitos(af.id);
+  // El comercio y su usuario quedan registrados juntos: quien aceptó en el portal ya es miembro (Owner) de la empresa.
+  const [u] = await sql()`insert into luka_cash.luka_cash_users (email) values (${email})
+    on conflict (email) do update set email = excluded.email returning id`;
+  await sql()`insert into luka_cash.luka_cash_members (user_id, affiliation_id, rol) values (${u!.id}, ${af.id}, 'owner') on conflict do nothing`;
   await logEvent(r, "afiliacion_activada_portal", af.id, { terminos_version, proveedor, nueva: !prev });
   return jsonResponse(r, { affiliation_id: af.id, estado: af.estado, nivel: af.nivel });
 }
@@ -620,6 +624,66 @@ async function portalInstallmentsPaid(r: Request) {
   if (next) await logEvent(r, `pago_${next}_portal`, af.id, { payment_id: pay!.id, nro_orden, id_link: pago_id_link, confirmado_por: "cliente" });
   const [f] = await sql()`select id, estado, monto, moneda, referencia from luka_cash.luka_cash_payments where id = ${pay!.id}`;
   return jsonResponse(r, { payment_id: f!.id, estado: f!.estado, monto: Number(f!.monto), moneda: f!.moneda, referencia: f!.referencia });
+}
+
+/* ---------- facturas del proveedor ---------- */
+const FECHA_RE = /^\d{4}-\d{2}-\d{2}/;
+interface FacturaPortal { id_link: string; numero: string; orden: string | null; monto: number; moneda: string; estado: string; vence: string | null; url_adjunto: string | null }
+
+export function limpiarFacturas(lista: unknown): FacturaPortal[] | string {
+  if (!Array.isArray(lista)) return "facturas debe ser una lista.";
+  if (lista.length > 500) return "Máximo 500 facturas por envío.";
+  const out: FacturaPortal[] = [];
+  for (const f of lista as Row[]) {
+    const id_link = str(f?.id_link, 120), numero = str(f?.numero, 60), monto = Number(f?.monto);
+    if (!id_link || !numero || !Number.isFinite(monto) || monto < 0) return "Cada factura necesita id_link, numero y monto.";
+    const vence = typeof f?.vence === "string" && FECHA_RE.test(f.vence) ? f.vence.slice(0, 10) : null;
+    const url = str(f?.url_adjunto, 500);
+    out.push({
+      id_link, numero, orden: str(f?.orden, 60) || null, monto: Math.round(monto * 100) / 100,
+      moneda: str(f?.moneda, 3).toUpperCase() || "VES", estado: str(f?.estado, 40).toLowerCase() || "pendiente",
+      vence, url_adjunto: /^https:\/\//.test(url) ? url : null,
+    });
+  }
+  return out;
+}
+
+/** El portal envía la foto completa de las facturas del comercio con ese proveedor. Reemplaza la anterior. */
+async function portalInvoicesSync(r: Request) {
+  const b = await readJson(r);
+  const af = await portalAffiliation(r, b);
+  if (af instanceof Response) return af;
+  const facturas = limpiarFacturas(b.facturas);
+  if (typeof facturas === "string") return bad(r, "datos_invalidos", facturas);
+  await sql().begin(async (tx) => {
+    for (const f of facturas) {
+      await tx`insert into luka_cash.luka_cash_invoices (affiliation_id, id_link, numero, orden, monto, moneda, estado, vence, url_adjunto, sincronizada_at)
+        values (${af.id}, ${f.id_link}, ${f.numero}, ${f.orden}, ${f.monto}, ${f.moneda}, ${f.estado}, ${f.vence}, ${f.url_adjunto}, now())
+        on conflict (affiliation_id, id_link) do update set numero = excluded.numero, orden = excluded.orden, monto = excluded.monto,
+          moneda = excluded.moneda, estado = excluded.estado, vence = excluded.vence, url_adjunto = excluded.url_adjunto, sincronizada_at = now()`;
+    }
+    const links = facturas.map((f) => f.id_link);
+    await tx`delete from luka_cash.luka_cash_invoices where affiliation_id = ${af.id} and not (id_link = any(${links}::text[]))`;
+  });
+  await logEvent(r, "facturas_sincronizadas", af.id, { cantidad: facturas.length });
+  return jsonResponse(r, { sincronizadas: facturas.length });
+}
+
+/** Facturas de todos los proveedores de la empresa del usuario, como las ve en el portal. */
+async function invoices(r: Request) {
+  const m = await activeMember(r);
+  if (m instanceof Response) return m;
+  const rows = await sql()`select i.id, i.affiliation_id, i.id_link, i.numero, i.orden, i.monto, i.moneda, i.estado, i.vence::text vence,
+      i.url_adjunto, i.sincronizada_at, a.proveedor, coalesce(a.proveedor_nombre, a.proveedor) proveedor_nombre, a.proveedor_logo_url
+    from luka_cash.luka_cash_invoices i join luka_cash.luka_cash_affiliations a on a.id = i.affiliation_id
+    where i.affiliation_id = any(${m.affIds}::uuid[]) order by i.vence nulls last, i.numero`;
+  return jsonResponse(r, {
+    facturas: rows.map((f) => ({
+      id: f.id, id_link: f.id_link, numero: f.numero, orden: f.orden, monto: Number(f.monto), moneda: f.moneda, estado: f.estado,
+      vence: f.vence, url_adjunto: f.url_adjunto, sincronizada_at: f.sincronizada_at,
+      proveedor: { id: f.affiliation_id, nombre: f.proveedor_nombre, logo_url: f.proveedor_logo_url ?? null },
+    })),
+  });
 }
 
 /* ---------- vera ---------- */
@@ -703,6 +767,8 @@ export const HANDLERS: Record<string, (r: Request) => Promise<Response>> = {
   "portal-plan-create": portalPlanCreate,
   "portal-balance": portalBalance,
   "portal-installments-paid": portalInstallmentsPaid,
+  "portal-invoices-sync": portalInvoicesSync,
+  invoices,
   "documents-upload": documentsUpload,
   "documents-confirm": documentsConfirm,
 };
