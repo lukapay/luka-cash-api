@@ -1,0 +1,2 @@
+# /etc/sudoers.d/lukacash  (visudo -cf antes de copiar). Solo reiniciar el servicio de la API.
+lukacash ALL=(root) NOPASSWD: /bin/systemctl restart luka-cash-api

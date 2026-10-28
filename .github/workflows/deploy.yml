@@ -1,0 +1,56 @@
+# Prueba en cada push; despliega al droplet solo en main.
+# Secretos del repo (Settings → Secrets and variables → Actions):
+#   DEPLOY_HOST (IP del droplet), DEPLOY_USER (lukacash), DEPLOY_SSH_KEY (llave privada solo para el CI),
+#   DEPLOY_KNOWN_HOSTS (salida de: ssh-keyscan -t ed25519 <IP>)
+name: ci-deploy
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+concurrency: { group: deploy-${{ github.ref }}, cancel-in-progress: false }
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:18
+        env: { POSTGRES_PASSWORD: prueba, POSTGRES_DB: luka_cash }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:prueba@localhost:5432/luka_cash
+      DATABASE_SSL: "off"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: psql "$DATABASE_URL" -c "create schema if not exists luka_cash"
+      - run: npm run build && npm run migrate
+      - run: npm test
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: produccion
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci && npm run build
+      - name: Llave SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+      - name: Subir release
+        env: { H: "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}", R: "/opt/luka-cash/api/releases/${{ github.sha }}" }
+        run: |
+          ssh "$H" "mkdir -p $R"
+          rsync -az --delete dist migrations package.json package-lock.json "$H:$R/"
+          ssh "$H" "cd $R && npm ci --omit=dev --no-audit --no-fund"
+      - name: Migrar, activar y verificar (con vuelta atrás)
+        env: { H: "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}", SHA: "${{ github.sha }}" }
+        run: ssh "$H" "bash -s" < deploy/activar.sh "$SHA"

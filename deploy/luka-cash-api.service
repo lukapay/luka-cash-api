@@ -1,0 +1,22 @@
+[Unit]
+Description=Luka Cash API (api.luka.cash)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=lukacash
+Group=lukacash
+WorkingDirectory=/opt/luka-cash/api/current
+EnvironmentFile=/etc/luka-cash/env
+Environment=NODE_ENV=production PORT=3001
+ExecStart=/usr/bin/node dist/server.js
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/luka-cash/api
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
