@@ -1,7 +1,6 @@
 // Correo del código de acceso por Amazon SES (us-west-2, configuration set luka-cash).
 // Plantilla aprobada por el owner el 27-oct (misma estructura que el correo de código de Luka).
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
-import { APP_PUBLIC_URL } from "./config";
 
 let _ses: SESv2Client | null = null;
 function ses(): SESv2Client {
@@ -20,7 +19,7 @@ export function mailConfigurado(): boolean {
   return Boolean(process.env["MAIL_ACCESS_KEY_ID"] && process.env["MAIL_SECRET_ACCESS_KEY"]);
 }
 
-const ISOTIPO_URL = () => process.env["MAIL_ISOTIPO_URL"] ?? `${APP_PUBLIC_URL}/brand/luka-cash-isotipo-email.png`;
+const ISOTIPO_URL = () => process.env["MAIL_ISOTIPO_URL"] ?? "https://api.luka.cash/brand/luka-cash-isotipo-email.png";
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 

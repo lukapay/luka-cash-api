@@ -60,7 +60,7 @@ jobs:
           R: "/opt/luka-cash/api/releases/${{ github.sha }}"
         run: |
           ssh "$H" "mkdir -p $R"
-          rsync -az --delete dist migrations package.json package-lock.json "$H:$R/"
+          rsync -az --delete dist migrations assets package.json package-lock.json "$H:$R/"
           ssh "$H" "cd $R && npm ci --omit=dev --no-audit --no-fund"
       - name: Migrar, activar y verificar (con vuelta atrás)
         env:

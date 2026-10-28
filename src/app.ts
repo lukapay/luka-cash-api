@@ -1,11 +1,25 @@
 // Rutas HTTP. Mismo prefijo que la app en Lovable (/api/public/luka/<nombre>) para que los clientes
 // solo cambien la base: https://api.luka.cash
+import fs from "node:fs";
+import path from "node:path";
 import { Hono } from "hono";
 import { corsHeaders, isAllowedOrigin, jsonResponse } from "./cors";
 import { HANDLERS } from "./handlers";
 import { isBlockedPortalOrigin } from "./luka/portal";
 
 export const app = new Hono();
+
+// Isotipo del correo del código: lo sirve la API para no depender de la web (Gmail necesita https y PNG).
+const ISOTIPO = (() => {
+  for (const p of [path.resolve("assets/brand/luka-cash-isotipo-email.png"), path.resolve("../assets/brand/luka-cash-isotipo-email.png")]) {
+    try { return fs.readFileSync(p); } catch { /* sigue */ }
+  }
+  return null;
+})();
+app.get("/brand/luka-cash-isotipo-email.png", () =>
+  ISOTIPO
+    ? new Response(ISOTIPO, { headers: { "Content-Type": "image/png", "Cache-Control": "public, max-age=604800, immutable" } })
+    : new Response("no encontrado", { status: 404 }));
 
 app.get("/health", (c) => HANDLERS["health"]!(c.req.raw));
 
