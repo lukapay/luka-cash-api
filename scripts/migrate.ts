@@ -4,6 +4,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { closeDb, sql } from "../src/db";
 
+// Las migraciones abren su propia transacción (begin/commit): postgres.js solo lo permite con una conexión.
+process.env["DATABASE_POOL_MAX"] = "1";
+
 const dir = path.resolve(process.env["MIGRATIONS_DIR"] ?? "migrations");
 const files = fs.readdirSync(dir).filter((f) => /^\d{4}_.+\.sql$/.test(f)).sort();
 try {
