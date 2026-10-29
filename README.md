@@ -63,3 +63,9 @@ Invitados de pre-lanzamiento (Lovable 061e101b) que entran con el mismo código 
 - Cada interesado nuevo avisa a `ventas@somosluka.com` (`MAIL_AVISOS_TO`) por SES, con Reply-To del interesado. No bloquea la respuesta.
 - Opcionales (29-oct): `rif` (J/V/E/G/P/C + 8 + 1 dígitos, se guarda `J-12345678-9`; inválido → `campo: "rif"`) y `proveedores` (0 a 20 nombres de 2 a 120 caracteres, sin duplicados; se reemplazan al actualizar; inválido → `campo: "proveedores"`). Van en el aviso a ventas y en `list`.
 - Admin: `./scripts/con-dev.sh npx tsx scripts/preonboarding.ts list [pendiente|invitado|descartado] | invitar <correo> | descartar <correo>`. `invitar` lo agrega al acceso anticipado.
+
+## Precalificación por RIF (29-oct, owner)
+Solo los RIF de `luka_cash_precalificados` (correo + RIF, activo) pueden crear una afiliación. Un correo puede tener varios.
+- `POST portal-eligibility` (X-Portal-Token): `{ proveedor, id_cliente, email }` → `{ rifs: [{ rif, razon_social }], afiliado, rif }`. `rifs` vacío = no elegible; `afiliado: true` con el RIF si ese comercio ya está afiliado.
+- `handoff-create`: si la afiliación no está activa y el RIF (normalizado `J-12345678-9`) no está precalificado y activo para ese correo → 403 `rif_no_precalificado`. La razón social sale de la tabla cuando la tiene. Afiliaciones activas: sin cambios.
+- Admin: `./scripts/con-dev.sh npx tsx scripts/precalificados.ts add <correo> <rif> ["razón social"] | remove <correo> <rif> | list [correo]`.

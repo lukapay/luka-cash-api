@@ -155,11 +155,31 @@ async function verifyPortal(r: Request, email: string): Promise<unknown | Respon
 }
 
 /* ---------- handoff ---------- */
+/* ---------- precalificación por RIF ---------- */
+/** RIF activos precalificados para un correo. */
+export async function rifsPrecalificados(email: string): Promise<{ rif: string; razon_social: string | null }[]> {
+  const rows = await sql()`select rif, razon_social from luka_cash.luka_cash_precalificados where email = ${email} and activo order by rif`;
+  return rows.map((x) => ({ rif: x.rif as string, razon_social: (x.razon_social as string | null) ?? null }));
+}
+
+/** POST portal-eligibility (X-Portal-Token): qué RIF puede afiliar este correo y si el comercio ya está afiliado. */
+async function portalEligibility(r: Request) {
+  const b = await readJson(r);
+  const proveedor = str(b.proveedor, 80), id_cliente = str(b.id_cliente, 120), email = normalizeEmail(b.email);
+  if (!proveedor || !id_cliente || !EMAIL_RE.test(email)) return bad(r, "datos_invalidos", "Faltan datos o el correo no es válido.");
+  const v = await verifyPortal(r, email);
+  if (v instanceof Response) return v;
+  const [af] = await sql()`select rif, estado from luka_cash.luka_cash_affiliations where proveedor = ${proveedor} and id_cliente = ${id_cliente}`;
+  const rifs = await rifsPrecalificados(email);
+  return jsonResponse(r, { rifs, afiliado: af?.estado === "activa", rif: af?.estado === "activa" ? af.rif : null });
+}
+
 async function handoffCreate(r: Request) {
   if (r.method !== "POST") return bad(r, "metodo", "Método no permitido.", 405);
   const b = await readJson(r);
   const proveedor = str(b.proveedor, 80), id_cliente = str(b.id_cliente, 120);
-  const rif = str(b.rif, 20).toUpperCase(), razon_social = str(b.razon_social, 200);
+  const rif = normalizarRif(b.rif) ?? str(b.rif, 20).toUpperCase();
+  let razon_social = str(b.razon_social, 200);
   const email = normalizeEmail(b.email), acepta_nombre = str(b.acepta_nombre, 120) || null;
   const proveedor_nombre = str(b.proveedor_nombre, 120) || null;
   const logo = str(b.proveedor_logo_url, 500);
@@ -169,6 +189,16 @@ async function handoffCreate(r: Request) {
   if (v instanceof Response) return v;
 
   const [existing] = await sql()`select id, estado from luka_cash.luka_cash_affiliations where proveedor = ${proveedor} and id_cliente = ${id_cliente}`;
+  // Precalificación (owner, 29-oct): una afiliación nueva o no activa solo se crea con un RIF precalificado para ese correo.
+  // La razón social sale de la tabla de precalificados cuando la tiene. Las afiliaciones ya activas no cambian.
+  if (existing?.estado !== "activa") {
+    const pre = (await rifsPrecalificados(email)).find((x) => x.rif === rif);
+    if (!pre) {
+      await logEvent(r, "handoff_rif_no_precalificado", existing?.id ?? null, { proveedor });
+      return bad(r, "rif_no_precalificado", "Este RIF no está precalificado para Luka Cash.", 403);
+    }
+    if (pre.razon_social) razon_social = pre.razon_social;
+  }
   let affiliationId: string;
   if (existing) {
     affiliationId = existing.id;
@@ -912,6 +942,7 @@ export const HANDLERS: Record<string, (r: Request) => Promise<Response>> = {
   health,
   vera,
   "handoff-create": handoffCreate,
+  "portal-eligibility": portalEligibility,
   "handoff-redeem": handoffRedeem,
   "code-send": codeSend,
   "code-verify": codeVerify,
