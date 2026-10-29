@@ -16,3 +16,22 @@ describe("limpiarFacturas (envío del portal)", () => {
     expect(limpiarFacturas("no")).toMatch(/lista/);
   });
 });
+
+import { clientIp } from "../src/handlers";
+describe("clientIp con intermediario de confianza", () => {
+  const llave = "k".repeat(40);
+  const req = (h: Record<string, string>) => new Request("http://x", { headers: h });
+  it("sin llave configurada usa X-Real-IP", () => {
+    delete process.env["EDGE_PROXY_KEY"];
+    expect(clientIp(req({ "x-real-ip": "143.198.65.214", "x-luka-visitor-ip": "1.2.3.4", "x-luka-proxy-key": llave }))).toBe("143.198.65.214");
+  });
+  it("con la llave correcta usa la IP del visitante", () => {
+    process.env["EDGE_PROXY_KEY"] = llave;
+    expect(clientIp(req({ "x-real-ip": "143.198.65.214", "x-luka-visitor-ip": "1.2.3.4", "x-luka-proxy-key": llave }))).toBe("1.2.3.4");
+  });
+  it("con llave equivocada la ignora", () => {
+    process.env["EDGE_PROXY_KEY"] = llave;
+    expect(clientIp(req({ "x-real-ip": "143.198.65.214", "x-luka-visitor-ip": "1.2.3.4", "x-luka-proxy-key": "otra" }))).toBe("143.198.65.214");
+    delete process.env["EDGE_PROXY_KEY"];
+  });
+});

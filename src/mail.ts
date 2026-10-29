@@ -54,9 +54,10 @@ export function correoCodigoTexto(codigo: string, nombre: string | null | undefi
   return `${lineaNombre(nombre)} de Luka Cash: ${codigo}\n\nVence en 10 minutos y sirve una sola vez.\n\nSi no fuiste tú quien lo pidió, no hagas nada: sin el código nadie entra.\n`;
 }
 
-export async function enviarCodigo(to: string, codigo: string, nombre: string | null | undefined): Promise<void> {
+/** Devuelve el MessageId de SES para poder rastrear la entrega. */
+export async function enviarCodigo(to: string, codigo: string, nombre: string | null | undefined): Promise<string | null> {
   const from = process.env["MAIL_FROM"] ?? "codigos@luka.cash";
-  await ses().send(
+  const out = await ses().send(
     new SendEmailCommand({
       FromEmailAddress: `Luka Cash <${from}>`,
       Destination: { ToAddresses: [to] },
@@ -72,6 +73,7 @@ export async function enviarCodigo(to: string, codigo: string, nombre: string | 
       },
     }),
   );
+  return out.MessageId ?? null;
 }
 
 

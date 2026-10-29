@@ -41,8 +41,17 @@ function fiveDigits(): string {
 }
 const normalizeEmail = (e: unknown) => String(e ?? "").trim().toLowerCase();
 /** Detrás de nginx: la IP real llega en X-Real-IP / X-Forwarded-For (nginx los pone; el cliente no). */
-export const clientIp = (r: Request) =>
-  r.headers.get("x-real-ip") ?? r.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+/**
+ * IP del visitante. Detrás de nginx llega en X-Real-IP. Si la llamada viene de un servidor propio que hace de intermediario
+ * (p. ej. el de luka.cash, que llama desde la IP del droplet), ese servidor manda la IP real del visitante en
+ * X-Luka-Visitor-IP junto con X-Luka-Proxy-Key; solo se cree si la llave coincide con EDGE_PROXY_KEY.
+ */
+export const clientIp = (r: Request) => {
+  const key = process.env["EDGE_PROXY_KEY"];
+  const visitor = r.headers.get("x-luka-visitor-ip")?.trim();
+  if (key && key.length >= 32 && visitor && r.headers.get("x-luka-proxy-key") === key && /^[0-9a-f:.]{3,45}$/i.test(visitor)) return visitor;
+  return r.headers.get("x-real-ip") ?? r.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+};
 const str = (v: unknown, n: number) => String(v ?? "").trim().slice(0, n);
 
 async function readJson(r: Request): Promise<Row> {
@@ -242,14 +251,16 @@ async function codeSend(r: Request) {
   await sql()`update luka_cash.luka_cash_codes set usado_at = now() where email = ${email} and usado_at is null`;
   await sql()`insert into luka_cash.luka_cash_codes (email, codigo_hash, expira_at, proposito)
     values (${email}, ${await sha256(`${email}:${code}`)}, ${new Date(Date.now() + TEN_MIN)}, ${proposito})`;
+  let messageId: string | null = null;
   try {
-    await enviarCodigo(email, code, nombre);
+    messageId = await enviarCodigo(email, code, nombre);
   } catch (e) {
     console.error("[code-send] SES:", (e as Error).name, (e as Error).message);
     await logEvent(r, "codigo_envio_fallido", affiliationId, { motivo: "envio_fallido" });
     return bad(r, "envio_fallido", "No pudimos enviar el correo. Intenta de nuevo en unos minutos.", 503);
   }
-  await logEvent(r, "codigo_enviado", affiliationId, { proposito });
+  await logEvent(r, "codigo_enviado", affiliationId, { proposito, ses_message_id: messageId });
+  console.log(`[code-send] SES aceptó ${messageId ?? "(sin id)"}`);
   return jsonResponse(r, GENERIC_OK);
 }
 
