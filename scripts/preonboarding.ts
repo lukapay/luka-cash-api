@@ -12,7 +12,7 @@ const email = (arg ?? "").trim().toLowerCase();
 try {
   if (cmd === "list") {
     const estado = arg && ["pendiente", "invitado", "descartado"].includes(arg) ? arg : null;
-    const rows = await sql()`select tipo, empresa, nombre, whatsapp, email, origen, estado, created_at::date fecha
+    const rows = await sql()`select tipo, empresa, rif, nombre, whatsapp, email, array_to_string(proveedores, ', ') proveedores, origen, estado, created_at::date fecha
       from luka_cash.luka_cash_preonboarding ${estado ? sql()`where estado = ${estado}` : sql()``} order by created_at desc`;
     console.table(rows);
   } else if (cmd === "invitar" && email) {

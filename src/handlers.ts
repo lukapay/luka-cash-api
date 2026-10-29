@@ -319,8 +319,30 @@ export function whatsappValido(w: string): boolean {
   return true;
 }
 
+/** RIF venezolano a J-12345678-9 (letras J, V, E, G, P, C; 8 + 1 dígitos), o null si no es válido. */
+export function normalizarRif(v: unknown): string | null {
+  const t = String(v ?? "").toUpperCase().replace(/[\s.\-]/g, "");
+  const m = /^([JVEGPC])(\d{8})(\d)$/.exec(t);
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : null;
+}
+
+/** 0 a 20 nombres, de 2 a 120 caracteres, recortados y sin duplicados (sin distinguir mayúsculas). */
+export function limpiarProveedores(v: unknown): string[] | null {
+  if (v == null) return [];
+  if (!Array.isArray(v)) return null;
+  const vistos = new Set<string>(), out: string[] = [];
+  for (const x of v) {
+    const n = String(x ?? "").trim().replace(/\s+/g, " ");
+    if (n.length < 2 || n.length > 120) return null;
+    const k = n.toLowerCase();
+    if (!vistos.has(k)) { vistos.add(k); out.push(n); }
+  }
+  return out.length <= 20 ? out : null;
+}
+
 export function validarPreonboarding(b: Row): { error: string; campo?: string } | {
   tipo: "proveedor" | "comercio"; empresa: string; nombre: string; whatsapp: string; email: string; origen: "landing" | "early_access";
+  rif: string | null; proveedores: string[];
 } {
   const tipo = b.tipo === "proveedor" || b.tipo === "comercio" ? b.tipo : null;
   const empresa = str(b.empresa, 160), nombre = str(b.nombre, 120);
@@ -333,13 +355,21 @@ export function validarPreonboarding(b: Row): { error: string; campo?: string } 
   if (!whatsappValido(whatsapp)) return { error: "datos_invalidos", campo: "whatsapp" };
   if (!EMAIL_RE.test(email) || email.length > 254) return { error: "datos_invalidos", campo: "email" };
   if (!origen) return { error: "datos_invalidos", campo: "origen" };
+  let rif: string | null = null;
+  if (b.rif != null && String(b.rif).trim() !== "") {
+    rif = normalizarRif(b.rif);
+    if (!rif) return { error: "datos_invalidos", campo: "rif" };
+  }
+  const proveedores = limpiarProveedores(b.proveedores);
+  if (!proveedores) return { error: "datos_invalidos", campo: "proveedores" };
   if (b.acepta_privacidad !== true) return { error: "sin_aceptacion" };
-  return { tipo, empresa, nombre, whatsapp, email, origen };
+  return { tipo, empresa, nombre, whatsapp, email, origen, rif, proveedores };
 }
 
 const MENSAJE_CAMPO: Record<string, string> = {
   tipo: "Elige si eres proveedor o comercio.", empresa: "Escribe el nombre de la empresa.", nombre: "Escribe tu nombre.",
   whatsapp: "Escribe un WhatsApp válido con código de país.", email: "Escribe un correo válido.", origen: "Origen no válido.",
+  rif: "Escribe un RIF válido, por ejemplo J-12345678-9.", proveedores: "Revisa la lista de proveedores (hasta 20).",
 };
 
 /** No crea empresas, afiliaciones ni usuarios: solo guarda el interés. */
@@ -353,9 +383,10 @@ async function preonboarding(r: Request) {
     if (v.error === "sin_aceptacion") return bad(r, "sin_aceptacion", "Debes aceptar la política de privacidad.");
     return jsonResponse(r, { error: "datos_invalidos", campo: v.campo, mensaje: MENSAJE_CAMPO[v.campo ?? ""] ?? "Revisa los datos." }, 400);
   }
-  const [row] = await sql()`insert into luka_cash.luka_cash_preonboarding (tipo, empresa, nombre, whatsapp, email, acepta_privacidad_at, origen, ip)
-    values (${v.tipo}, ${v.empresa}, ${v.nombre}, ${v.whatsapp}, ${v.email}, now(), ${v.origen}, ${ip})
+  const [row] = await sql()`insert into luka_cash.luka_cash_preonboarding (tipo, empresa, nombre, whatsapp, email, acepta_privacidad_at, origen, ip, rif, proveedores)
+    values (${v.tipo}, ${v.empresa}, ${v.nombre}, ${v.whatsapp}, ${v.email}, now(), ${v.origen}, ${ip}, ${v.rif}, ${v.proveedores}::text[])
     on conflict (tipo, lower(email)) do update set empresa = excluded.empresa, nombre = excluded.nombre, whatsapp = excluded.whatsapp,
+      rif = excluded.rif, proveedores = excluded.proveedores,
       acepta_privacidad_at = excluded.acepta_privacidad_at, origen = excluded.origen, updated_at = now()
     returning (xmax = 0) nuevo`;
   await logEvent(r, "preonboarding", null, { tipo: v.tipo, origen: v.origen, nuevo: row?.nuevo ?? false });

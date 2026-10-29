@@ -76,12 +76,12 @@ export async function enviarCodigo(to: string, codigo: string, nombre: string | 
 
 
 /** Aviso interno a ventas por cada interesado nuevo (pre-onboarding) de la landing o del acceso anticipado. No bloquea la respuesta. */
-export async function avisarPreonboarding(v: { tipo: string; empresa: string; nombre: string; whatsapp: string; email: string; origen: string }): Promise<void> {
+export async function avisarPreonboarding(v: { tipo: string; empresa: string; nombre: string; whatsapp: string; email: string; origen: string; rif?: string | null; proveedores?: string[] }): Promise<void> {
   if (!mailConfigurado()) return;
   const to = process.env["MAIL_AVISOS_TO"] ?? "ventas@somosluka.com";
   const from = process.env["MAIL_FROM"] ?? "codigos@luka.cash";
   const tipo = v.tipo === "proveedor" ? "Proveedor" : "Comercio";
-  const texto = `Nuevo interesado en Luka Cash (pre-onboarding)\n\nTipo: ${tipo}\nEmpresa: ${v.empresa}\nNombre: ${v.nombre}\nWhatsApp: ${v.whatsapp}\nCorreo: ${v.email}\nOrigen: ${v.origen === "landing" ? "luka.cash" : "acceso anticipado"}\n`;
+  const texto = `Nuevo interesado en Luka Cash (pre-onboarding)\n\nTipo: ${tipo}\nEmpresa: ${v.empresa}\nNombre: ${v.nombre}\nWhatsApp: ${v.whatsapp}\nCorreo: ${v.email}\nOrigen: ${v.origen === "landing" ? "luka.cash" : "acceso anticipado"}\n${v.rif ? `RIF: ${v.rif}\n` : ""}${v.proveedores?.length ? `Proveedores a los que paga: ${v.proveedores.join(", ")}\n` : ""}`;
   await ses().send(new SendEmailCommand({
     FromEmailAddress: `Luka Cash <${from}>`,
     Destination: { ToAddresses: [to] },

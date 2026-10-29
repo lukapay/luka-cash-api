@@ -61,4 +61,5 @@ Invitados de pre-lanzamiento (Lovable 061e101b) que entran con el mismo código 
 - Cuerpo: `{ tipo: "proveedor"|"comercio", empresa, nombre, whatsapp (E.164; +58 exige móvil 4xx de 10 dígitos; resto 8 a 15 dígitos), email, acepta_privacidad: true, origen: "landing"|"early_access" }`.
 - 200 `{ recibido: true, mensaje }`, también si ya existía (actualiza sin revelarlo). 400 `{ error: "datos_invalidos", campo, mensaje }` o `sin_aceptacion`; 429 `limite` (10 por hora por IP).
 - Cada interesado nuevo avisa a `ventas@somosluka.com` (`MAIL_AVISOS_TO`) por SES, con Reply-To del interesado. No bloquea la respuesta.
+- Opcionales (29-oct): `rif` (J/V/E/G/P/C + 8 + 1 dígitos, se guarda `J-12345678-9`; inválido → `campo: "rif"`) y `proveedores` (0 a 20 nombres de 2 a 120 caracteres, sin duplicados; se reemplazan al actualizar; inválido → `campo: "proveedores"`). Van en el aviso a ventas y en `list`.
 - Admin: `./scripts/con-dev.sh npx tsx scripts/preonboarding.ts list [pendiente|invitado|descartado] | invitar <correo> | descartar <correo>`. `invitar` lo agrega al acceso anticipado.
