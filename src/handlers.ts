@@ -171,7 +171,11 @@ async function portalEligibility(r: Request) {
   if (v instanceof Response) return v;
   const [af] = await sql()`select rif, estado from luka_cash.luka_cash_affiliations where proveedor = ${proveedor} and id_cliente = ${id_cliente}`;
   const rifs = await rifsPrecalificados(email);
-  return jsonResponse(r, { rifs, afiliado: af?.estado === "activa", rif: af?.estado === "activa" ? af.rif : null });
+  // Cada sesión del portal es de una empresa con su RIF fijo: si llega rif, elegible = ese RIF activo para el correo.
+  const rifEmpresa = b.rif != null && String(b.rif).trim() !== "" ? normalizarRif(b.rif) : null;
+  if (b.rif != null && String(b.rif).trim() !== "" && !rifEmpresa) return jsonResponse(r, { error: "datos_invalidos", campo: "rif", mensaje: "RIF no válido." }, 400);
+  const elegible = rifEmpresa ? rifs.some((x) => x.rif === rifEmpresa) : rifs.length > 0;
+  return jsonResponse(r, { elegible, afiliado: af?.estado === "activa", rif: af?.estado === "activa" ? af.rif : null, rifs });
 }
 
 async function handoffCreate(r: Request) {

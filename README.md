@@ -66,6 +66,6 @@ Invitados de pre-lanzamiento (Lovable 061e101b) que entran con el mismo código 
 
 ## Precalificación por RIF (29-oct, owner)
 Solo los RIF de `luka_cash_precalificados` (correo + RIF, activo) pueden crear una afiliación. Un correo puede tener varios.
-- `POST portal-eligibility` (X-Portal-Token): `{ proveedor, id_cliente, email }` → `{ rifs: [{ rif, razon_social }], afiliado, rif }`. `rifs` vacío = no elegible; `afiliado: true` con el RIF si ese comercio ya está afiliado.
+- `POST portal-eligibility` (X-Portal-Token): `{ proveedor, id_cliente, email, rif }` → `{ elegible, afiliado, rif, rifs }`. Con `rif` (el de la empresa de la sesión), `elegible` = ese RIF activo para el correo; sin `rif`, `elegible` = el correo tiene algún RIF activo. `afiliado: true` con el RIF si ese comercio ya está afiliado. RIF mal formado → 400 `datos_invalidos`, `campo: "rif"`.
 - `handoff-create`: si la afiliación no está activa y el RIF (normalizado `J-12345678-9`) no está precalificado y activo para ese correo → 403 `rif_no_precalificado`. La razón social sale de la tabla cuando la tiene. Afiliaciones activas: sin cambios.
 - Admin: `./scripts/con-dev.sh npx tsx scripts/precalificados.ts add <correo> <rif> ["razón social"] | remove <correo> <rif> | list [correo]`.
