@@ -75,18 +75,18 @@ export async function enviarCodigo(to: string, codigo: string, nombre: string | 
 }
 
 
-/** Aviso interno a ventas por cada registro nuevo de la landing o del acceso anticipado. No bloquea la respuesta. */
-export async function avisarRegistro(v: { tipo: string; empresa: string; nombre: string; whatsapp: string; email: string; origen: string }): Promise<void> {
+/** Aviso interno a ventas por cada interesado nuevo (pre-onboarding) de la landing o del acceso anticipado. No bloquea la respuesta. */
+export async function avisarPreonboarding(v: { tipo: string; empresa: string; nombre: string; whatsapp: string; email: string; origen: string }): Promise<void> {
   if (!mailConfigurado()) return;
   const to = process.env["MAIL_AVISOS_TO"] ?? "ventas@somosluka.com";
   const from = process.env["MAIL_FROM"] ?? "codigos@luka.cash";
   const tipo = v.tipo === "proveedor" ? "Proveedor" : "Comercio";
-  const texto = `Nuevo registro en Luka Cash\n\nTipo: ${tipo}\nEmpresa: ${v.empresa}\nNombre: ${v.nombre}\nWhatsApp: ${v.whatsapp}\nCorreo: ${v.email}\nOrigen: ${v.origen === "landing" ? "luka.cash" : "acceso anticipado"}\n`;
+  const texto = `Nuevo interesado en Luka Cash (pre-onboarding)\n\nTipo: ${tipo}\nEmpresa: ${v.empresa}\nNombre: ${v.nombre}\nWhatsApp: ${v.whatsapp}\nCorreo: ${v.email}\nOrigen: ${v.origen === "landing" ? "luka.cash" : "acceso anticipado"}\n`;
   await ses().send(new SendEmailCommand({
     FromEmailAddress: `Luka Cash <${from}>`,
     Destination: { ToAddresses: [to] },
     ReplyToAddresses: [v.email],
     ConfigurationSetName: process.env["MAIL_CONFIGURATION_SET"] ?? "luka-cash",
-    Content: { Simple: { Subject: { Data: `Nuevo registro (${tipo}): ${v.empresa}`, Charset: "UTF-8" }, Body: { Text: { Data: texto, Charset: "UTF-8" } } } },
+    Content: { Simple: { Subject: { Data: `Nuevo interesado (${tipo}): ${v.empresa}`, Charset: "UTF-8" }, Body: { Text: { Data: texto, Charset: "UTF-8" } } } },
   }));
 }
