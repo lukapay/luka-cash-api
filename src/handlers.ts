@@ -79,29 +79,40 @@ async function resolveTicket(ticket: unknown): Promise<Row | null> {
 }
 
 /* ---------- sesiones propias ---------- */
-async function crearSesion(r: Request, email: string): Promise<{ token: string; userId: string; expira: Date }> {
+type Alcance = "app" | "early_access";
+
+async function crearSesion(r: Request, email: string, alcance: Alcance = "app"): Promise<{ token: string; userId: string; expira: Date }> {
   const [u] = await sql()`insert into luka_cash.luka_cash_users (email) values (${email})
     on conflict (email) do update set email = excluded.email returning id`;
   const token = opaqueToken(32);
   const expira = new Date(Date.now() + SESSION_DAYS * 86400000);
-  await sql()`insert into luka_cash.luka_cash_sessions (user_id, token_hash, expires_at, ip, user_agent)
-    values (${u!.id}, ${await sha256(token)}, ${expira}, ${clientIp(r)}, ${r.headers.get("user-agent")?.slice(0, 400) ?? null})`;
+  await sql()`insert into luka_cash.luka_cash_sessions (user_id, token_hash, expires_at, ip, user_agent, alcance)
+    values (${u!.id}, ${await sha256(token)}, ${expira}, ${clientIp(r)}, ${r.headers.get("user-agent")?.slice(0, 400) ?? null}, ${alcance})`;
   return { token, userId: u!.id, expira };
 }
 
-/** Usuario de la sesión del header Authorization, o null. Renueva last_used_at y extiende el vencimiento. */
-async function usuarioDeSesion(r: Request): Promise<{ id: string; email: string } | null> {
+/**
+ * Usuario de la sesión del header Authorization, o null. Renueva last_used_at y extiende el vencimiento.
+ * Por defecto solo vale una sesión de alcance "app": una sesión de Early Access nunca abre rutas de la app.
+ */
+async function usuarioDeSesion(r: Request, alcance: Alcance | "cualquiera" = "app"): Promise<{ id: string; email: string; alcance: Alcance; expira: Date } | null> {
   const auth = r.headers.get("authorization") ?? "";
   if (!auth.startsWith("Bearer ")) return null;
   const token = auth.slice(7).trim();
   if (token.length < 20 || token.length > 200) return null;
-  const [s] = await sql()`select s.id, u.id user_id, u.email from luka_cash.luka_cash_sessions s
+  const [s] = await sql()`select s.id, s.alcance, u.id user_id, u.email from luka_cash.luka_cash_sessions s
     join luka_cash.luka_cash_users u on u.id = s.user_id
     where s.token_hash = ${await sha256(token)} and s.revoked_at is null and s.expires_at > now()`;
   if (!s) return null;
-  await sql()`update luka_cash.luka_cash_sessions set last_used_at = now(),
-    expires_at = greatest(expires_at, now() + make_interval(days => ${SESSION_DAYS})) where id = ${s.id}`;
-  return { id: s.user_id, email: s.email };
+  if (alcance !== "cualquiera" && s.alcance !== alcance) return null;
+  if (s.alcance === "early_access") {
+    // Un invitado revocado pierde la sesión al instante.
+    const [ea] = await sql()`select 1 from luka_cash.luka_cash_early_access where email = ${s.email} and revoked_at is null`;
+    if (!ea) return null;
+  }
+  const [upd] = await sql()`update luka_cash.luka_cash_sessions set last_used_at = now(),
+    expires_at = greatest(expires_at, now() + make_interval(days => ${SESSION_DAYS})) where id = ${s.id} returning expires_at`;
+  return { id: s.user_id, email: s.email, alcance: s.alcance as Alcance, expira: new Date(upd!.expires_at) };
 }
 
 async function activeMember(r: Request): Promise<{ userId: string; affIds: string[] } | Response> {
@@ -207,11 +218,16 @@ async function codeSend(r: Request) {
       return bad(r, "limite_consultas", "Hiciste muchas consultas. Intenta de nuevo en una hora.", 429);
     }
     const [af] = await sql()`select id, acepta_nombre from luka_cash.luka_cash_affiliations where email = ${email} and estado = 'activa' order by created_at limit 1`;
-    if (!af) {
-      await logEvent(r, "codigo_sin_afiliacion", null, {});
-      return jsonResponse(r, SIN_INVITACION);
+    if (af) {
+      affiliationId = af.id; nombre = af.acepta_nombre;
+    } else {
+      const ea = await invitadoEarlyAccess(email);
+      if (!ea) {
+        await logEvent(r, "codigo_sin_afiliacion", null, {});
+        return jsonResponse(r, SIN_INVITACION);
+      }
+      affiliationId = null; nombre = ea.nombre;
     }
-    affiliationId = af.id; nombre = af.acepta_nombre;
   }
 
   const recent = await sql()`select created_at from luka_cash.luka_cash_codes where email = ${email} and created_at >= ${new Date(Date.now() - 3600_000)} order by created_at desc`;
@@ -252,6 +268,7 @@ async function codeVerify(r: Request) {
     email = normalizeEmail(b.email);
     [af] = await sql()`select * from luka_cash.luka_cash_affiliations where email = ${email} and estado = 'activa' order by created_at limit 1`;
     if (!af) {
+      if (await invitadoEarlyAccess(email)) return verificarEarlyAccess(r, email, codigo);
       await logEvent(r, "verificacion_sin_afiliacion", null, {});
       return jsonResponse(r, { sin_sesion: true });
     }
@@ -289,7 +306,45 @@ async function codeVerify(r: Request) {
   const s = await crearSesion(r, email);
   await sql()`insert into luka_cash.luka_cash_members (user_id, affiliation_id) values (${s.userId}, ${af.id}) on conflict do nothing`;
   await logEvent(r, "entrada", af.id, { proposito });
-  return jsonResponse(r, { session_token: s.token, expira_at: s.expira.toISOString() });
+  return jsonResponse(r, { session_token: s.token, expira_at: s.expira.toISOString(), alcance: "app" });
+}
+
+/* ---------- Early Access (invitados de pre-lanzamiento) ---------- */
+async function invitadoEarlyAccess(email: string): Promise<{ nombre: string | null } | null> {
+  const [ea] = await sql()`select nombre from luka_cash.luka_cash_early_access where email = ${email} and revoked_at is null`;
+  return ea ? { nombre: (ea.nombre as string | null) ?? null } : null;
+}
+
+/** Mismas reglas del código (5 dígitos, 10 min, 3 intentos); la sesión sale con alcance early_access. */
+async function verificarEarlyAccess(r: Request, email: string, codigo: string) {
+  const [row] = await sql()`select * from luka_cash.luka_cash_codes where email = ${email} order by created_at desc limit 1`;
+  const sinIntentos = () => bad(r, "sin_intentos", "Agotaste los 3 intentos. Pide un código nuevo.");
+  if (!row) return bad(r, "vencido", "El código venció. Pide uno nuevo.");
+  if (row.intentos >= 3) return sinIntentos();
+  if (row.usado_at) return bad(r, "usado", "Este código ya se usó. Pide uno nuevo.");
+  if (new Date(row.expira_at).getTime() < Date.now()) return bad(r, "vencido", "El código venció. Pide uno nuevo.");
+  if ((await sha256(`${email}:${codigo}`)) !== row.codigo_hash) {
+    const intentos = row.intentos + 1;
+    await sql()`update luka_cash.luka_cash_codes set intentos = ${intentos} where id = ${row.id}`;
+    await logEvent(r, "codigo_incorrecto", null, { intentos, early_access: true });
+    if (intentos >= 3) return sinIntentos();
+    const q = 3 - intentos;
+    return bad(r, "incorrecto", `Código incorrecto. Te ${q === 1 ? "queda 1 intento" : `quedan ${q} intentos`}.`);
+  }
+  await sql()`update luka_cash.luka_cash_codes set usado_at = now() where id = ${row.id}`;
+  const s = await crearSesion(r, email, "early_access");
+  await logEvent(r, "entrada_early_access", null, {});
+  return jsonResponse(r, { session_token: s.token, expira_at: s.expira.toISOString(), alcance: "early_access" });
+}
+
+/** GET o POST con Bearer: { email, alcance, expira_at } o 401. Marca validated_at del invitado la primera vez. */
+async function session(r: Request) {
+  const u = await usuarioDeSesion(r, "cualquiera");
+  if (!u) return bad(r, "sin_sesion", "La sesión no es válida.", 401);
+  if (u.alcance === "early_access") {
+    await sql()`update luka_cash.luka_cash_early_access set validated_at = now() where email = ${u.email} and validated_at is null`;
+  }
+  return jsonResponse(r, { email: u.email, alcance: u.alcance, expira_at: u.expira.toISOString() });
 }
 
 async function crearRequisitos(affiliationId: string) {
@@ -765,6 +820,7 @@ export const HANDLERS: Record<string, (r: Request) => Promise<Response>> = {
   "code-send": codeSend,
   "code-verify": codeVerify,
   "session-close": sessionClose,
+  session,
   balance,
   "installments-pay": installmentsPay,
   "installments-confirm": installmentsConfirm,

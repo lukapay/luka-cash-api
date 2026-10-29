@@ -23,6 +23,8 @@ export const ALLOWED_ORIGINS: readonly string[] = [
   "https://localhost", // Android (androidScheme https)
   // Vista previa del portal de pagos
   "https://id-preview--13ee17a3-1c40-4050-860c-36283a947427.lovable.app",
+  // Orígenes extra sin redesplegar código (p. ej. el dominio de producción de Early Access): EXTRA_ALLOWED_ORIGINS="https://a,https://b"
+  ...(env("EXTRA_ALLOWED_ORIGINS", "") as string).split(",").map((o) => o.trim().replace(/\/$/, "")).filter((o) => /^https:\/\/[a-z0-9.-]+$/i.test(o)),
 ];
 
 /** Patrones extra solo fuera de producción (AMBIENTE=calidad): vistas previas de Lovable y desarrollo local. */

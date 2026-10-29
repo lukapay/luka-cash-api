@@ -44,3 +44,14 @@ npm run typecheck && npm test          # pruebas de reglas
 - Confirmación del pago del lado del servidor (hoy `confirmado_por = cliente`): falta el endpoint de estado de link en Payco.
 - Regla de cuotas del 22-oct (2 o 3 cuotas cada 30 días según nivel) junto con el portal; hoy valida la regla vieja (cada 15 días).
 - Primer despliegue: crear `lukacash`, `/opt/luka-cash/api`, la unidad `deploy/luka-cash-api.service`, el sitio `deploy/nginx-api.luka.cash.conf`, `deploy/sudoers-lukacash`, y los secretos `DEPLOY_*` del repo.
+
+## Early Access (29-oct, pedido del owner: "A: api.luka.cash")
+Invitados de pre-lanzamiento (Lovable 061e101b) que entran con el mismo código de `codigos@luka.cash`.
+- Tabla `luka_cash.luka_cash_early_access` (email único en minúsculas, nombre, origen, invited_at, validated_at, revoked_at). Sembrados: ruben@somosluka.com, manuel@somosluka.com.
+- `code-send { email }`: si el correo no tiene afiliación activa pero es invitado vigente, envía el código (mismas reglas y límites).
+- `code-verify { email, codigo, proposito: "entrar" }`: invitado sin afiliación → `{ session_token, expira_at, alcance: "early_access" }`. Con afiliación activa → igual que siempre, `alcance: "app"`.
+- La sesión `early_access` **no abre ninguna ruta de la app** (balance, invoices, pagos, documentos, vera responden 401).
+- `GET|POST session` con `Authorization: Bearer` → `{ email, alcance, expira_at }` o 401; marca `validated_at` la primera vez.
+- Revocar un invitado invalida su sesión al instante.
+- Administrar: `./scripts/con-dev.sh npx tsx scripts/early-access.ts add correo "Nombre" [origen] | remove correo | list` (calidad, desde la Mac). En el droplet: `node dist/early-access.js ...` con el env cargado.
+- CORS: `EXTRA_ALLOWED_ORIGINS="https://dominio1,https://dominio2"` en `/etc/luka-cash/env` agrega orígenes sin redesplegar código (reinicio del servicio). En calidad ya pasan `*.lovable.app`.
