@@ -4,7 +4,7 @@
 import { jsonResponse } from "./cors";
 import { sql } from "./db";
 import { AMBIENTE, APP_PUBLIC_URL, DOMINIOS_PRODUCCION, LUKA_AUTH_URL, PAYCO_API_BASE, SESSION_DAYS, TERMINOS_VERSION, VERA_API_URL } from "./config";
-import { enviarCodigo, mailConfigurado } from "./mail";
+import { avisarRegistro, enviarCodigo, mailConfigurado } from "./mail";
 import { borrarObjeto, infoObjeto, urlSubida } from "./storage";
 import { estadoCuota } from "./lib/installments";
 import { hoyCaracas, maskEmail } from "./lib/format";
@@ -307,6 +307,59 @@ async function codeVerify(r: Request) {
   await sql()`insert into luka_cash.luka_cash_members (user_id, affiliation_id) values (${s.userId}, ${af.id}) on conflict do nothing`;
   await logEvent(r, "entrada", af.id, { proposito });
   return jsonResponse(r, { session_token: s.token, expira_at: s.expira.toISOString(), alcance: "app" });
+}
+
+/* ---------- registro de proveedores y comercios (landing y acceso anticipado) ---------- */
+const LIMITE_REGISTROS_IP = 10;
+
+/** WhatsApp en E.164. Venezuela (+58): móvil 4xx de 10 dígitos. Resto: de 8 a 15 dígitos. */
+export function whatsappValido(w: string): boolean {
+  if (!/^\+\d{8,15}$/.test(w)) return false;
+  if (w.startsWith("+58")) return /^\+584\d{9}$/.test(w);
+  return true;
+}
+
+export function validarRegistro(b: Row): { error: string; campo?: string } | {
+  tipo: "proveedor" | "comercio"; empresa: string; nombre: string; whatsapp: string; email: string; origen: "landing" | "early_access";
+} {
+  const tipo = b.tipo === "proveedor" || b.tipo === "comercio" ? b.tipo : null;
+  const empresa = str(b.empresa, 160), nombre = str(b.nombre, 120);
+  const whatsapp = String(b.whatsapp ?? "").replace(/[\s()-]/g, "");
+  const email = normalizeEmail(b.email);
+  const origen = b.origen === "early_access" ? "early_access" : b.origen === "landing" || b.origen == null ? "landing" : null;
+  if (!tipo) return { error: "datos_invalidos", campo: "tipo" };
+  if (empresa.length < 2) return { error: "datos_invalidos", campo: "empresa" };
+  if (nombre.length < 2) return { error: "datos_invalidos", campo: "nombre" };
+  if (!whatsappValido(whatsapp)) return { error: "datos_invalidos", campo: "whatsapp" };
+  if (!EMAIL_RE.test(email) || email.length > 254) return { error: "datos_invalidos", campo: "email" };
+  if (!origen) return { error: "datos_invalidos", campo: "origen" };
+  if (b.acepta_privacidad !== true) return { error: "sin_aceptacion" };
+  return { tipo, empresa, nombre, whatsapp, email, origen };
+}
+
+const MENSAJE_CAMPO: Record<string, string> = {
+  tipo: "Elige si eres proveedor o comercio.", empresa: "Escribe el nombre de la empresa.", nombre: "Escribe tu nombre.",
+  whatsapp: "Escribe un WhatsApp válido con código de país.", email: "Escribe un correo válido.", origen: "Origen no válido.",
+};
+
+async function registro(r: Request) {
+  const ip = clientIp(r);
+  if (ip && (await contarEventos("registro", "ip", [ip], 3600_000)) >= LIMITE_REGISTROS_IP) {
+    return bad(r, "limite", "Hiciste muchos registros. Intenta de nuevo en una hora.", 429);
+  }
+  const v = validarRegistro(await readJson(r));
+  if ("error" in v) {
+    if (v.error === "sin_aceptacion") return bad(r, "sin_aceptacion", "Debes aceptar la política de privacidad.");
+    return jsonResponse(r, { error: "datos_invalidos", campo: v.campo, mensaje: MENSAJE_CAMPO[v.campo ?? ""] ?? "Revisa los datos." }, 400);
+  }
+  const [row] = await sql()`insert into luka_cash.luka_cash_registros (tipo, empresa, nombre, whatsapp, email, acepta_privacidad_at, origen, ip)
+    values (${v.tipo}, ${v.empresa}, ${v.nombre}, ${v.whatsapp}, ${v.email}, now(), ${v.origen}, ${ip})
+    on conflict (tipo, lower(email)) do update set empresa = excluded.empresa, nombre = excluded.nombre, whatsapp = excluded.whatsapp,
+      acepta_privacidad_at = excluded.acepta_privacidad_at, origen = excluded.origen, updated_at = now()
+    returning (xmax = 0) nuevo`;
+  await logEvent(r, "registro", null, { tipo: v.tipo, origen: v.origen, nuevo: row?.nuevo ?? false });
+  if (row?.nuevo) void avisarRegistro(v).catch((e) => console.error("[registro] aviso a ventas:", (e as Error).name));
+  return jsonResponse(r, { recibido: true, mensaje: "Recibimos tus datos. Te escribiremos pronto." });
 }
 
 /* ---------- Early Access (invitados de pre-lanzamiento) ---------- */
@@ -820,6 +873,7 @@ export const HANDLERS: Record<string, (r: Request) => Promise<Response>> = {
   "code-send": codeSend,
   "code-verify": codeVerify,
   "session-close": sessionClose,
+  registro,
   session,
   balance,
   "installments-pay": installmentsPay,

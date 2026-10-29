@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "esbuild src/server.ts --bundle --platform=node --format=esm --packages=external --target=node22 --outfile=dist/server.js && esbuild scripts/migrate.ts --bundle --platform=node --format=esm --packages=external --target=node22 --outfile=dist/migrate.js && esbuild scripts/early-access.ts --bundle --platform=node --format=esm --packages=external --target=node22 --outfile=dist/early-access.js",
+    "build": "esbuild src/server.ts --bundle --platform=node --format=esm --packages=external --target=node22 --outfile=dist/server.js && esbuild scripts/migrate.ts --bundle --platform=node --format=esm --packages=external --target=node22 --outfile=dist/migrate.js && esbuild scripts/early-access.ts --bundle --platform=node --format=esm --packages=external --target=node22 --outfile=dist/early-access.js && esbuild scripts/registros.ts --bundle --platform=node --format=esm --packages=external --target=node22 --outfile=dist/registros.js",
     "start": "node dist/server.js",
     "migrate": "node dist/migrate.js",
     "test": "vitest run",

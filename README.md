@@ -55,3 +55,10 @@ Invitados de pre-lanzamiento (Lovable 061e101b) que entran con el mismo código 
 - Revocar un invitado invalida su sesión al instante.
 - Administrar: `./scripts/con-dev.sh npx tsx scripts/early-access.ts add correo "Nombre" [origen] | remove correo | list` (calidad, desde la Mac). En el droplet: `node dist/early-access.js ...` con el env cargado.
 - CORS: `EXTRA_ALLOWED_ORIGINS="https://dominio1,https://dominio2"` en `/etc/luka-cash/env` agrega orígenes sin redesplegar código (reinicio del servicio). En calidad ya pasan `*.lovable.app`.
+
+## Registro de proveedores y comercios (29-oct, owner: "Sí, pídelo")
+`POST registro` desde luka.cash/registro y desde el acceso anticipado. Tabla `luka_cash_registros` (único por tipo + correo).
+- Cuerpo: `{ tipo: "proveedor"|"comercio", empresa, nombre, whatsapp (E.164; +58 exige móvil 4xx de 10 dígitos; resto 8 a 15 dígitos), email, acepta_privacidad: true, origen: "landing"|"early_access" }`.
+- 200 `{ recibido: true, mensaje }`, también si ya existía (actualiza los datos sin revelarlo). 400 `{ error: "datos_invalidos", campo, mensaje }` o `sin_aceptacion`; 429 `limite` (10 por hora por IP).
+- Cada registro nuevo avisa a `ventas@somosluka.com` (`MAIL_AVISOS_TO`) por SES, con Reply-To del registrado. No bloquea la respuesta.
+- Admin: `./scripts/con-dev.sh npx tsx scripts/registros.ts list [pendiente|invitado|descartado] | invitar <correo> | descartar <correo>`. `invitar` lo agrega al acceso anticipado.
