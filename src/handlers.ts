@@ -156,10 +156,21 @@ async function verifyPortal(r: Request, email: string): Promise<unknown | Respon
 
 /* ---------- handoff ---------- */
 /* ---------- precalificación por RIF ---------- */
-/** RIF activos precalificados para un correo. */
-export async function rifsPrecalificados(email: string): Promise<{ rif: string; razon_social: string | null }[]> {
-  const rows = await sql()`select rif, razon_social from luka_cash.luka_cash_precalificados where email = ${email} and activo order by rif`;
+/**
+ * RIF activos precalificados para un correo: los asociados a ese correo más, de los `candidatos`, los precalificados
+ * sin correo (valen para cualquier correo). Nunca devuelve la lista completa de RIF sin correo: solo la intersección.
+ */
+export async function rifsPrecalificados(email: string, candidatos: string[] = []): Promise<{ rif: string; razon_social: string | null }[]> {
+  const rows = await sql()`select distinct on (rif) rif, razon_social from luka_cash.luka_cash_precalificados
+    where activo and (email = ${email} or (email is null and rif = any(${candidatos}::text[])))
+    order by rif, (email is null)`;
   return rows.map((x) => ({ rif: x.rif as string, razon_social: (x.razon_social as string | null) ?? null }));
+}
+
+/** Candidatos que manda el portal (RIF de la cuenta y de las facturas): normalizados, sin duplicados, máx. 50. */
+export function rifsCandidatos(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return [...new Set(v.slice(0, 50).map(normalizarRif).filter((x): x is string => Boolean(x)))];
 }
 
 /** POST portal-eligibility (X-Portal-Token): qué RIF puede afiliar este correo y si el comercio ya está afiliado. */
@@ -170,7 +181,10 @@ async function portalEligibility(r: Request) {
   const v = await verifyPortal(r, email);
   if (v instanceof Response) return v;
   const [af] = await sql()`select rif, estado from luka_cash.luka_cash_affiliations where proveedor = ${proveedor} and id_cliente = ${id_cliente}`;
-  const rifs = await rifsPrecalificados(email);
+  const candidatos = rifsCandidatos(b.rifs);
+  const rifEmpresaPre = b.rif != null && String(b.rif).trim() !== "" ? normalizarRif(b.rif) : null;
+  if (rifEmpresaPre) candidatos.push(rifEmpresaPre);
+  const rifs = await rifsPrecalificados(email, candidatos);
   // Cada sesión del portal es de una empresa con su RIF fijo: si llega rif, elegible = ese RIF activo para el correo.
   const rifEmpresa = b.rif != null && String(b.rif).trim() !== "" ? normalizarRif(b.rif) : null;
   if (b.rif != null && String(b.rif).trim() !== "" && !rifEmpresa) return jsonResponse(r, { error: "datos_invalidos", campo: "rif", mensaje: "RIF no válido." }, 400);
@@ -196,7 +210,7 @@ async function handoffCreate(r: Request) {
   // Precalificación (owner, 29-oct): una afiliación nueva o no activa solo se crea con un RIF precalificado para ese correo.
   // La razón social sale de la tabla de precalificados cuando la tiene. Las afiliaciones ya activas no cambian.
   if (existing?.estado !== "activa") {
-    const pre = (await rifsPrecalificados(email)).find((x) => x.rif === rif);
+    const pre = (await rifsPrecalificados(email, [rif])).find((x) => x.rif === rif);
     if (!pre) {
       await logEvent(r, "handoff_rif_no_precalificado", existing?.id ?? null, { proveedor });
       return bad(r, "rif_no_precalificado", "Este RIF no está precalificado para Luka Cash.", 403);
