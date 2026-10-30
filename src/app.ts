@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { Hono } from "hono";
 import { corsHeaders, isAllowedOrigin, jsonResponse } from "./cors";
+import { ALLOWED_ORIGINS } from "./config";
 import { HANDLERS } from "./handlers";
 import { isBlockedPortalOrigin } from "./luka/portal";
 
@@ -34,7 +35,9 @@ app.on(["GET", "POST"], "/api/public/luka/:name", async (c) => {
   const handler = HANDLERS[name];
   if (!handler) return jsonResponse(r, { error: "no_existe", mensaje: "Ruta no encontrada." }, 404);
   const origin = r.headers.get("origin");
-  if (isBlockedPortalOrigin(origin)) return jsonResponse(r, { error: "origen_no_permitido", mensaje: "El portal productivo todavía no usa Luka Cash." }, 403);
+  // *.lukapay.me / *.lukapay.io siguen bloqueados salvo los orígenes agregados de forma explícita (EXTRA_ALLOWED_ORIGINS),
+  // p. ej. https://portal-cash.lukapay.me, el portal de calidad con Cuotas elegido por el owner (30-oct).
+  if (isBlockedPortalOrigin(origin) && !(origin && ALLOWED_ORIGINS.includes(origin))) return jsonResponse(r, { error: "origen_no_permitido", mensaje: "El portal productivo todavía no usa Luka Cash." }, 403);
   if (origin && !isAllowedOrigin(origin)) return jsonResponse(r, { error: "origen_no_permitido", mensaje: "Origen no permitido." }, 403);
   try {
     return await handler(r);

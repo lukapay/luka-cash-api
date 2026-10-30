@@ -35,3 +35,11 @@ describe("clientIp con intermediario de confianza", () => {
     delete process.env["EDGE_PROXY_KEY"];
   });
 });
+
+describe("portal de calidad en lukapay.me", () => {
+  it("un *.lukapay.me no listado sigue bloqueado", async () => {
+    const { app } = await import("../src/app");
+    const r = await app.fetch(new Request("http://x/api/public/luka/portal-eligibility", { method: "POST", headers: { origin: "https://portal.lukapay.me", "content-type": "application/json" }, body: "{}" }));
+    expect(r.status).toBe(403);
+  });
+});
