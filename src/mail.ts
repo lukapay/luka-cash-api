@@ -23,8 +23,19 @@ const ISOTIPO_URL = () => process.env["MAIL_ISOTIPO_URL"] ?? "https://api.luka.c
 
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
+const ROLES = /^(admin|administrador|administradora|owner|dueño|dueña|usuario|user|operador|operadora|soporte|contacto|n\/a|na)$/i;
+
+/** Primer nombre apto para el saludo: nunca un correo ni un rol ("Admin - correo" llega desde el portal). */
+export function primerNombreSaludo(nombre: string | null | undefined): string | null {
+  const t = (nombre ?? "").trim();
+  if (!t || t.includes("@")) return null;
+  const n = t.split(/[\s,;:|/-]+/)[0] ?? "";
+  if (n.length < 2 || ROLES.test(n) || /\d/.test(n)) return null;
+  return n;
+}
+
 export function lineaNombre(nombre: string | null | undefined): string {
-  const n = nombre?.trim().split(/\s+/)[0];
+  const n = primerNombreSaludo(nombre);
   return n ? `${n}, este es tu código` : "Este es tu código";
 }
 
