@@ -287,7 +287,7 @@ async function codeSend(r: Request) {
     values (${email}, ${await sha256(`${email}:${code}`)}, ${new Date(Date.now() + TEN_MIN)}, ${proposito})`;
   let messageId: string | null = null;
   try {
-    messageId = await enviarCodigo(email, code, nombre);
+    messageId = await enviarCodigo(email, code, nombre, proposito);
   } catch (e) {
     console.error("[code-send] SES:", (e as Error).name, (e as Error).message);
     await logEvent(r, "codigo_envio_fallido", affiliationId, { motivo: "envio_fallido" });

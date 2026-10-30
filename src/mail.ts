@@ -28,7 +28,19 @@ export function lineaNombre(nombre: string | null | undefined): string {
   return n ? `${n}, este es tu código` : "Este es tu código";
 }
 
-export function correoCodigoHtml(codigo: string, nombre: string | null | undefined): string {
+export type PropositoCodigo = "entrar" | "activar";
+
+/** Título del correo: en activación "Confirma tu afiliación" (owner, 30-oct); en entrada el saludo de siempre. */
+export function tituloCorreo(nombre: string | null | undefined, proposito: PropositoCodigo = "entrar"): string {
+  return proposito === "activar" ? "Confirma tu afiliación" : lineaNombre(nombre);
+}
+
+/** Asunto: activación "<código>, tu código para activar Luka Cash"; entrada sin cambios. */
+export function asuntoCorreo(codigo: string, proposito: PropositoCodigo = "entrar"): string {
+  return proposito === "activar" ? `${codigo}, tu código para activar Luka Cash` : `${codigo}, tu código para entrar a Luka Cash`;
+}
+
+export function correoCodigoHtml(codigo: string, nombre: string | null | undefined, proposito: PropositoCodigo = "entrar"): string {
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Tu código de Luka Cash</title></head><body style="margin:0;padding:0;background:#F4F7FC;">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F4F7FC;padding:32px 16px;">
 <tr><td align="center">
@@ -37,7 +49,7 @@ export function correoCodigoHtml(codigo: string, nombre: string | null | undefin
       <img src="${esc(ISOTIPO_URL())}" alt="Luka Cash" width="82" height="82" style="display:block;border:0;outline:none;text-decoration:none;width:82px;height:82px;">
     </td></tr>
     <tr><td style="font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#545E72;padding-bottom:16px;">Luka Cash</td></tr>
-    <tr><td style="font-size:19px;font-weight:600;color:#07194E;padding-bottom:8px;">${esc(lineaNombre(nombre))}</td></tr>
+    <tr><td style="font-size:19px;font-weight:600;color:#07194E;padding-bottom:8px;">${esc(tituloCorreo(nombre, proposito))}</td></tr>
     <tr><td style="font-size:14px;line-height:1.6;color:#545E72;padding-bottom:22px;">Vence en 10 minutos y sirve una sola vez.</td></tr>
     <tr><td align="center" style="padding-bottom:22px;">
       <div style="display:inline-block;font-family:'SFMono-Regular',Menlo,Consolas,monospace;font-size:34px;font-weight:700;letter-spacing:.24em;color:#0E1220;background:#D6F9F9;border:1px solid #A6EFEE;border-radius:12px;padding:16px 22px 16px 30px;">${esc(codigo)}</div>
@@ -50,12 +62,13 @@ export function correoCodigoHtml(codigo: string, nombre: string | null | undefin
 </body></html>`;
 }
 
-export function correoCodigoTexto(codigo: string, nombre: string | null | undefined): string {
+export function correoCodigoTexto(codigo: string, nombre: string | null | undefined, proposito: PropositoCodigo = "entrar"): string {
+  if (proposito === "activar") return `Confirma tu afiliación a Luka Cash. Tu código es: ${codigo}\n\nVence en 10 minutos y sirve una sola vez.\n\nSi no fuiste tú quien lo pidió, no hagas nada: sin el código nadie entra.\n`;
   return `${lineaNombre(nombre)} de Luka Cash: ${codigo}\n\nVence en 10 minutos y sirve una sola vez.\n\nSi no fuiste tú quien lo pidió, no hagas nada: sin el código nadie entra.\n`;
 }
 
 /** Devuelve el MessageId de SES para poder rastrear la entrega. */
-export async function enviarCodigo(to: string, codigo: string, nombre: string | null | undefined): Promise<string | null> {
+export async function enviarCodigo(to: string, codigo: string, nombre: string | null | undefined, proposito: PropositoCodigo = "entrar"): Promise<string | null> {
   const from = process.env["MAIL_FROM"] ?? "codigos@luka.cash";
   const out = await ses().send(
     new SendEmailCommand({
@@ -64,10 +77,10 @@ export async function enviarCodigo(to: string, codigo: string, nombre: string | 
       ConfigurationSetName: process.env["MAIL_CONFIGURATION_SET"] ?? "luka-cash",
       Content: {
         Simple: {
-          Subject: { Data: `${codigo}, tu código para entrar a Luka Cash`, Charset: "UTF-8" },
+          Subject: { Data: asuntoCorreo(codigo, proposito), Charset: "UTF-8" },
           Body: {
-            Html: { Data: correoCodigoHtml(codigo, nombre), Charset: "UTF-8" },
-            Text: { Data: correoCodigoTexto(codigo, nombre), Charset: "UTF-8" },
+            Html: { Data: correoCodigoHtml(codigo, nombre, proposito), Charset: "UTF-8" },
+            Text: { Data: correoCodigoTexto(codigo, nombre, proposito), Charset: "UTF-8" },
           },
         },
       },
