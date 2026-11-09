@@ -22,6 +22,20 @@ app.get("/brand/luka-cash-isotipo-email.png", () =>
     ? new Response(ISOTIPO, { headers: { "Content-Type": "image/png", "Cache-Control": "public, max-age=604800, immutable" } })
     : new Response("no encontrado", { status: 404 }));
 
+// Logos de proveedores para la calidad (datos de ejemplo): solo archivos de assets/proveedores, sin rutas arbitrarias.
+const LOGOS: Record<string, string> = { png: "image/png", jpg: "image/jpeg" };
+app.get("/brand/proveedores/:archivo", (c) => {
+  const archivo = c.req.param("archivo");
+  const m = /^([a-z0-9-]+)\.(png|jpg)$/.exec(archivo);
+  if (!m) return new Response("no encontrado", { status: 404 });
+  for (const base of ["assets/proveedores", "../assets/proveedores"]) {
+    try {
+      return new Response(fs.readFileSync(path.resolve(base, archivo)), { headers: { "Content-Type": LOGOS[m[2]!]!, "Cache-Control": "public, max-age=604800" } });
+    } catch { /* sigue */ }
+  }
+  return new Response("no encontrado", { status: 404 });
+});
+
 app.get("/health", (c) => HANDLERS["health"]!(c.req.raw));
 
 app.options("/api/public/luka/:name", (c) => {
