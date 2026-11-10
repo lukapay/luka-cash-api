@@ -66,6 +66,31 @@ async function factura(affId: string, numero: string, monto: number, estado: str
     on conflict (affiliation_id, id_link) do update set monto = excluded.monto, estado = excluded.estado, vence = excluded.vence, sincronizada_at = now()`;
 }
 
+// Catálogo de pedidos de Coca-Cola FEMSA (owner 10-nov). Fotos: claves de las que trae la app.
+const CATALOGO_COCA: [sku: string, nombre: string, presentacion: string, categoria: string, precio: number, foto: string][] = [
+  ["CC-355-24", "Coca-Cola 355 ml", "Caja de 24", "Refrescos", 18.72, "bebidas_1"],
+  ["CC-2L-6", "Coca-Cola 2 L", "Paca de 6", "Refrescos", 15.87, "bebidas_7"],
+  ["CCSA-355-24", "Coca-Cola Sin Azúcar 355 ml", "Caja de 24", "Refrescos", 18.72, "bebidas_6"],
+  ["FRE-1.5-6", "Frescolita 1,5 L", "Paca de 6", "Refrescos", 12.64, "bebidas_4"],
+  ["CHI-1.5-6", "Chinotto 1,5 L", "Paca de 6", "Refrescos", 12.64, "bebidas_8"],
+  ["NEV-600-12", "Agua Nevada 600 ml", "Paca de 12", "Aguas", 6.48, "bebidas_2"],
+  ["DV-1L-12", "Del Valle naranja 1 L", "Caja de 12", "Jugos", 24.36, "bebidas_3"],
+  ["PWR-500-12", "Powerade 500 ml", "Caja de 12", "Hidratantes", 14.85, "bebidas_5"],
+];
+
+async function catalogoCoca() {
+  await sql()`insert into luka_cash.luka_cash_proveedores (proveedor, nota_entrega, pedido_minimo, moneda)
+    values ('coca-cola-femsa', 'Entrega martes y viernes', 150, 'USD')
+    on conflict (proveedor) do update set nota_entrega = excluded.nota_entrega, pedido_minimo = excluded.pedido_minimo, updated_at = now()`;
+  let orden = 0;
+  for (const [sku, nombre, presentacion, categoria, precio, foto] of CATALOGO_COCA) {
+    await sql()`insert into luka_cash.luka_cash_productos (proveedor, sku, nombre, presentacion, categoria, precio, foto, orden)
+      values ('coca-cola-femsa', ${sku}, ${nombre}, ${presentacion}, ${categoria}, ${precio}, ${foto}, ${orden++})
+      on conflict (proveedor, sku) do update set nombre = excluded.nombre, presentacion = excluded.presentacion, categoria = excluded.categoria,
+        precio = excluded.precio, foto = excluded.foto, orden = excluded.orden, activo = true, updated_at = now()`;
+  }
+}
+
 async function cargar() {
   // La empresa de prueba J-00000000-1 (creada el 28-oct) tapaba a Tu Bodega J-12345678-0: se borra.
   const borradas = await sql()`delete from luka_cash.luka_cash_affiliations where email = ${EMAIL} and rif = 'J-00000000-1' returning id`;
@@ -93,6 +118,7 @@ async function cargar() {
   await factura(id["heinz"]!, "HZ-55021", 418.25, "pendiente", 18);
   await factura(id["heinz"]!, "HZ-54980", 97.6, "vencida", -1);
 
+  await catalogoCoca();
   console.log(`datos de ejemplo cargados para ${EMAIL} (${RIF}); empresas de prueba borradas: ${borradas.length}`);
 }
 

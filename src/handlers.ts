@@ -890,6 +890,26 @@ async function invoices(r: Request) {
   });
 }
 
+/** Catálogo para hacer pedidos: por cada proveedor de la empresa, su portada, condiciones y productos activos. */
+async function catalog(r: Request) {
+  const m = await activeMember(r);
+  if (m instanceof Response) return m;
+  const provs = await sql()`select a.id, a.proveedor, coalesce(a.proveedor_nombre, a.proveedor) nombre, p.portada_url, p.nota_entrega, p.pedido_minimo, p.moneda
+    from luka_cash.luka_cash_affiliations a join luka_cash.luka_cash_proveedores p on p.proveedor = a.proveedor
+    where a.id = any(${m.affIds}::uuid[])`;
+  const slugs = [...new Set(provs.map((x) => x.proveedor as string))];
+  const prods = slugs.length ? await sql()`select id, proveedor, sku, nombre, presentacion, categoria, precio, moneda, foto, foto_url
+    from luka_cash.luka_cash_productos where activo and proveedor = any(${slugs}::text[]) order by orden, nombre` : [];
+  return jsonResponse(r, {
+    proveedores: provs.map((x) => ({ id: x.id, portada_url: x.portada_url ?? null, nota_entrega: x.nota_entrega ?? null,
+      pedido_minimo: x.pedido_minimo == null ? null : Number(x.pedido_minimo), moneda: x.moneda })),
+    productos: provs.flatMap((x) => prods.filter((p) => p.proveedor === x.proveedor).map((p) => ({
+      id: `${x.id}:${p.sku}`, sku: p.sku, proveedor_id: x.id, nombre: p.nombre, presentacion: p.presentacion, categoria: p.categoria,
+      precio: Number(p.precio), moneda: p.moneda, foto: p.foto ?? null, foto_url: p.foto_url ?? null,
+    }))),
+  });
+}
+
 /* ---------- vera ---------- */
 const hostDe = (u: string | null) => { try { return u ? new URL(u).hostname : null; } catch { return null; } };
 const demoHostOk = (h: string | null) => !!h && isDemoAllowed({ hostname: h, protocol: "https:" }, false, DOMINIOS_PRODUCCION);
@@ -976,6 +996,7 @@ export const HANDLERS: Record<string, (r: Request) => Promise<Response>> = {
   "portal-installments-paid": portalInstallmentsPaid,
   "portal-invoices-sync": portalInvoicesSync,
   invoices,
+  catalog,
   "documents-upload": documentsUpload,
   "documents-confirm": documentsConfirm,
 };
